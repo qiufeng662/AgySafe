@@ -1,0 +1,13 @@
+{
+  "required_files_present": true,
+  "no_internal_release_json_in_root": true,
+  "powershell_utf8_bom": true,
+  "no_legacy_runner_dependency": true,
+  "markdown_relative_links_resolve": true,
+  "yaml_parses": true,
+  "readme_has_mermaid": true,
+  "readme_has_badges": true,
+  "readme_has_agent_setup": true,
+  "readme_has_troubleshooting": true,
+  "readme_has_architecture": true
+}

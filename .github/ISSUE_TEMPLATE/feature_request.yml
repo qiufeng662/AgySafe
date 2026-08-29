@@ -1,0 +1,50 @@
+name: Feature request
+description: Suggest an improvement or another agent integration
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      placeholder: Describe the workflow/problem, not only the desired implementation.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Agent integration
+        - Universal CLI
+        - Snapshot / filtering
+        - Model routing
+        - Installer / UX
+        - Documentation
+        - Platform support
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: thin_adapter
+    attributes:
+      label: Can this remain a thin adapter?
+      description: For agent integrations, explain whether it can call the existing `agysafe` CLI without changing the core.
+
+  - type: checkboxes
+    id: philosophy
+    attributes:
+      label: Project philosophy
+      options:
+        - label: This proposal does not require bypassing AGY authentication, service limits, region restrictions, or safety controls.
+          required: true

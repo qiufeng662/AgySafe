@@ -1,0 +1,92 @@
+name: Bug report
+description: Report a reproducible AgySafe problem
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem.
+
+        **Please remove secrets and sensitive project content before posting logs or receipts.**
+
+  - type: input
+    id: version
+    attributes:
+      label: AgySafe version
+      placeholder: v1.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: host
+    attributes:
+      label: Host agent
+      description: OpenCode, Codex, Gemini CLI, Claude Code, Cursor, universal CLI, etc.
+      placeholder: OpenCode
+    validations:
+      required: true
+
+  - type: input
+    id: agy_version
+    attributes:
+      label: AGY version
+      description: Output of `agy --version`
+      placeholder: "1.1.22"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: status
+    attributes:
+      label: AgySafe status
+      options:
+        - SUCCESS but wrong behavior
+        - NETWORK_ERROR
+        - REGION_UNSUPPORTED
+        - WORKSPACE_ERROR
+        - PERMISSION_DENIED
+        - NO_OUTPUT
+        - INCOMPLETE
+        - NO_CHANGES
+        - SNAPSHOT_EMPTY
+        - ERROR
+        - No receipt/status was produced
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Prefer a short smoke test over a full long-running review.
+      placeholder: |
+        1. Run ...
+        2. See ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: universal
+    attributes:
+      label: Universal CLI result
+      description: If possible, include a sanitized result from `agysafe --workspace "." --json --timeout 2 "只回复 OK"`.
+      render: text
+
+  - type: textarea
+    id: receipt
+    attributes:
+      label: Sanitized receipt / error
+      description: Remove sensitive paths/content if needed.
+      render: json
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, cookies, private keys, tokens, and sensitive project data from this report.
+          required: true
+        - label: I did not repeatedly retry a long AGY task while diagnosing.
+          required: false

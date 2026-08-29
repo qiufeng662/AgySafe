@@ -1,0 +1,17 @@
+description = "Delegate a task to AgySafe / official Antigravity"
+
+prompt = """
+The user wants to delegate the following request through AgySafe:
+
+{{args}}
+
+Use the local terminal command `agysafe` from the current project directory.
+
+Rules:
+- Default to automatic mode and model selection.
+- If the request starts with `--model <slug>` or `-m <slug>`, pass that model override to AgySafe and remove it from the task text.
+- If the request starts with `--mode <mode>`, pass that mode override and remove it from the task text.
+- Invoke AgySafe with `--workspace "." --json`.
+- Return the actual AgySafe result.
+- Do not repeatedly retry a failed long task.
+"""

@@ -1,0 +1,21 @@
+<!-- AGYSAFE:BEGIN -->
+## AgySafe delegation
+
+When the user explicitly asks to use AgySafe, AGY, or Antigravity for a task, invoke the installed `agysafe` command from the current project directory.
+
+Default:
+
+```text
+agysafe --workspace "." --json "<exact user task>"
+```
+
+AgySafe selects mode and model automatically unless the user explicitly requests overrides.
+
+Manual model override:
+
+```text
+agysafe --workspace "." --model <slug> --json "<exact user task>"
+```
+
+Return the real AgySafe result. Do not repeatedly retry a failed long task.
+<!-- AGYSAFE:END -->
