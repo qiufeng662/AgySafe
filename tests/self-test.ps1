@@ -57,7 +57,15 @@ try {
     $edit = $editJson | ConvertFrom-Json
 
     if ($edit.status -ne "SUCCESS") { throw "edit status: $($edit.status)" }
-    if ($edit.changed_files -notcontains "edited_by_fake.txt") { throw "isolated edit not detected" }
+    $changed = @($edit.changed_files)
+    if ($changed.Count -lt 1) {
+        throw "edit returned SUCCESS but changed_files was empty"
+    }
+
+    $isolatedEdit = Join-Path $edit.delegated_workspace "edited_by_fake.txt"
+    if (-not (Test-Path -LiteralPath $isolatedEdit)) {
+        throw "isolated edit file missing from delegated workspace"
+    }
     if (Test-Path -LiteralPath (Join-Path $project "edited_by_fake.txt")) { throw "real project was modified" }
 
     # Universal GNU-style CLI path, including manual model override.
