@@ -60,20 +60,15 @@ function Resolve-AgySafeMode {
 function Resolve-AgySafeModel {
     param([string]$Text, [string]$ResolvedMode, [string]$Requested)
 
+    # v1.0.1 is Gemini-first by default. Premium/limited models such as
+    # Claude or GPT are never selected implicitly; users can still request
+    # any AGY-supported model explicitly with --model / -m.
     if ($Requested -ne "auto") { return $Requested }
 
     $t = $Text.ToLowerInvariant()
 
-    if ($t -match '极高复杂度|全面深度|重大架构|关键架构|高风险架构|critical architecture|high-stakes') {
-        return "claude-opus-4-6-thinking"
-    }
-
-    if ($t -match '跨文件|复杂.?bug|架构|技术债|重构方案|系统设计|cross-file|architecture|complex bug|technical debt') {
+    if ($t -match '跨文件|复杂.?bug|架构|技术债|重构方案|系统设计|极高复杂度|全面深度|重大架构|关键架构|高风险架构|cross-file|architecture|complex bug|technical debt|critical architecture|high-stakes') {
         return "gemini-3.1-pro-high"
-    }
-
-    if ($t -match 'claude|sonnet') {
-        return "claude-sonnet-4-6"
     }
 
     if ($ResolvedMode -eq "review") {
@@ -372,7 +367,11 @@ function Invoke-OfficialAgy {
 function Resolve-Status {
     param([int]$ExitCode, [string]$Output, [string]$ResolvedMode, [object[]]$ChangedFiles)
 
-    $text = $Output.ToLowerInvariant()
+    $text = if ($null -eq $Output) { "" } else { $Output.ToLowerInvariant() }
+
+    if ($text -match 'individual quota reached|quota exceeded|quota has been exceeded|resource_exhausted|resource exhausted|rate limit exceeded|too many requests') {
+        return "QUOTA_EXCEEDED"
+    }
 
     if ($text -match 'user location is not supported|location is not supported for the api use') {
         return "REGION_UNSUPPORTED"
@@ -402,15 +401,68 @@ function Resolve-Status {
         return "NO_OUTPUT"
     }
 
-    $trimmed = $Output.Trim()
+    if ($ResolvedMode -eq "review") {
+        $trimmed = $Output.Trim()
 
-    if ($ResolvedMode -eq "review" -and
-        $trimmed.Length -lt 300 -and
-        $trimmed -match '让我先|我先|我将先|先让我|let me first|i will first|i''ll first') {
-        return "INCOMPLETE"
+        # Short planning-only replies are incomplete.
+        if ($trimmed.Length -lt 300 -and
+            $trimmed.ToLowerInvariant() -match '让我先|我先|我将先|先让我|let me first|i will first|i''ll first') {
+            return "INCOMPLETE"
+        }
+
+        # AGY can also exit 0 after a long agentic review while the model has
+        # finished research/tool work but ends by merely announcing the final
+        # synthesis. Inspect only the ending so a completed report is not
+        # penalized for process language that appeared earlier.
+        $endingLength = [Math]::Min(700, $trimmed.Length)
+        $ending = $trimmed.Substring($trimmed.Length - $endingLength).ToLowerInvariant()
+
+        if ($ending -match '(?s)(?:now\s+)?let me\s+(?:now\s+)?(?:compile|write|produce|prepare|generate|create).{0,180}(?:final\s+)?(?:review|report|artifact|answer)(?:\s+now)?[\s\.!:;-]*$' -or
+            $ending -match '(?s)我现在(?:开始|来).{0,80}(?:汇总|整理|生成|撰写).{0,80}(?:报告|结论|评审)[\s。！：；-]*$') {
+            return "INCOMPLETE"
+        }
     }
 
     return "SUCCESS"
+}
+
+function Get-QuotaMetadata {
+    param([string]$Output)
+
+    $quotaType = $null
+    $resetHint = $null
+
+    if (-not [string]::IsNullOrWhiteSpace($Output)) {
+        if ($Output -match '(?i)individual quota reached') {
+            $quotaType = "individual"
+        }
+        elseif ($Output -match '(?i)quota|resource[_ ]exhausted|rate limit') {
+            $quotaType = "service"
+        }
+
+        if ($Output -match '(?im)resets? in\s+([^\r\n]+)') {
+            $resetHint = $Matches[1].Trim().TrimEnd('.')
+        }
+    }
+
+    return [pscustomobject]@{
+        quota_type = $quotaType
+        reset_hint = $resetHint
+    }
+}
+
+function Get-FallbackRecommendation {
+    param([string]$Status, [string]$SelectedModel)
+
+    if ($Status -notin @("QUOTA_EXCEEDED", "INCOMPLETE", "NETWORK_ERROR")) {
+        return $null
+    }
+
+    if ($SelectedModel -like "gemini-*") {
+        return $null
+    }
+
+    return "gemini-3.7-flash-high"
 }
 
 function Write-JsonUtf8 {
@@ -461,7 +513,7 @@ if ($Doctor) {
         $doctorError = $_.Exception.Message
     }
 
-    $doctor = [ordered]@{
+    $doctorResult = [ordered]@{
         status = $doctorStatus
         agy_found = [bool]$agyExe
         agy_path = $agyExe
@@ -470,7 +522,7 @@ if ($Doctor) {
     }
 
     if ($Json) {
-        $doctor | ConvertTo-Json -Depth 5
+        $doctorResult | ConvertTo-Json -Depth 5
     }
     else {
         Write-Host ""
@@ -502,6 +554,10 @@ if ($realWorkspace.TrimEnd('\') -eq $driveRoot.TrimEnd('\')) {
 
 $resolvedMode = Resolve-AgySafeMode $Task $Mode
 $selectedModel = Resolve-AgySafeModel $Task $resolvedMode $Model
+$workspaceNote = $null
+if ($Task -match '(?i)https?://(?:www\.)?github\.com/') {
+    $workspaceNote = "GitHub URLs in task text are context only; AgySafe reviewed the local workspace shown in real_workspace."
+}
 
 $runRoot = Get-RunRoot
 Clean-OldRuns $runRoot
@@ -528,10 +584,15 @@ if ($resolvedMode -ne "ask" -and $snapshot.included.Count -eq 0) {
         mode = $resolvedMode
         selected_model = $selectedModel
         real_workspace = $realWorkspace
+        workspace_source = "local"
+        workspace_note = $workspaceNote
         delegated_workspace = $delegatedWorkspace
         included_file_count = 0
         excluded_file_count = $snapshot.excluded.Count
         excluded_files = $snapshot.excluded
+        quota_type = $null
+        reset_hint = $null
+        recommended_fallback = $null
         result = ""
         run_dir = $runDir
     }
@@ -563,6 +624,8 @@ $ended = Get-Date
 $after = Get-Manifest $delegatedWorkspace
 $changedFiles = @(Compare-Manifest $before $after)
 $status = Resolve-Status $agyResult.exit_code $agyResult.output $resolvedMode $changedFiles
+$quotaMetadata = Get-QuotaMetadata $agyResult.output
+$recommendedFallback = Get-FallbackRecommendation $status $selectedModel
 
 $handoffPath = Join-Path $runDir "handoff.md"
 [System.IO.File]::WriteAllText($handoffPath, $agyResult.output, ([System.Text.UTF8Encoding]::new($true)))
@@ -575,6 +638,8 @@ $receipt = [ordered]@{
     requested_model = $Model
     selected_model = $selectedModel
     real_workspace = $realWorkspace
+    workspace_source = "local"
+    workspace_note = $workspaceNote
     delegated_workspace = $delegatedWorkspace
     snapshot_used = ($resolvedMode -ne "ask")
     real_workspace_exposed_to_agy = $false
@@ -584,6 +649,9 @@ $receipt = [ordered]@{
     changed_files = $changedFiles
     removed_environment_names = $agyResult.removed_environment_names
     agy_exit_code = $agyResult.exit_code
+    quota_type = $quotaMetadata.quota_type
+    reset_hint = $quotaMetadata.reset_hint
+    recommended_fallback = $recommendedFallback
     handoff_path = $handoffPath
     result = $agyResult.output
     run_dir = $runDir
@@ -607,6 +675,12 @@ if (-not [string]::IsNullOrWhiteSpace($agyResult.output)) {
 }
 
 Write-Host ("AgySafe · " + $selectedModel + " · " + $status)
+Write-Host ("Workspace: " + $realWorkspace)
+if ($workspaceNote) { Write-Host ("Note: " + $workspaceNote) }
+if ($recommendedFallback) { Write-Host ("Recommended fallback: " + $recommendedFallback) }
+if ($status -eq "QUOTA_EXCEEDED" -and $quotaMetadata.reset_hint) {
+    Write-Host ("Quota reset hint: " + $quotaMetadata.reset_hint)
+}
 
 if ($resolvedMode -eq "edit" -and $changedFiles.Count -gt 0) {
     Write-Host ("Isolated changes: " + $changedFiles.Count)

@@ -26,8 +26,12 @@ Options:
 
 Examples:
   agysafe "review the current project"
-  agysafe --model claude-sonnet-4-6 "review the current project"
   agysafe -m gemini-3.1-pro-high --mode review "analyze the architecture"
+  agysafe --model claude-sonnet-4-6 "review the current project"
+
+Model policy:
+  auto is Gemini-first. Claude/GPT models are used only when explicitly
+  selected with --model / -m.
 "@
 }
 
@@ -183,11 +187,21 @@ if ($jsonRequested) {
     Write-Output $text
 }
 else {
+    Write-Host ("AgySafe workspace: " + $result.real_workspace)
+    if ($result.workspace_note) { Write-Host ("Note: " + $result.workspace_note) }
+    Write-Host ""
+
     if (-not [string]::IsNullOrWhiteSpace([string]$result.result)) {
         Write-Output $result.result
         Write-Host ""
     }
     Write-Host ("AgySafe · " + $result.selected_model + " · " + $result.status)
+    if ($result.recommended_fallback) {
+        Write-Host ("Recommended fallback: " + $result.recommended_fallback)
+    }
+    if ($result.status -eq "QUOTA_EXCEEDED" -and $result.reset_hint) {
+        Write-Host ("Quota reset hint: " + $result.reset_hint)
+    }
 
     if ($result.mode -eq "edit" -and @($result.changed_files).Count -gt 0) {
         Write-Host ("Isolated changes: " + @($result.changed_files).Count)

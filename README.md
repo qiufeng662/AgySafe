@@ -6,7 +6,7 @@
 
 **Official AGY CLI · Agent-agnostic · Local-first · Safe by default**
 
-[![Release](https://img.shields.io/badge/release-v1.0.0-2ea44f?style=flat-square)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v1.0.1-2ea44f?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-PowerShell%205.1%2B-0078D4?style=flat-square&logo=windows)](#requirements)
 [![AGY](https://img.shields.io/badge/runtime-official%20agy-4285F4?style=flat-square)](#how-it-works)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -59,7 +59,7 @@ flowchart LR
 | | Capability | What it means |
 |---|---|---|
 | 🤖 | **Agent-agnostic** | Works through one `agysafe` CLI instead of a separate runtime per agent |
-| 🧠 | **Automatic model routing** | Default is `Model=auto`; AgySafe selects a suitable AGY model from the task |
+| 🧠 | **Gemini-first automatic routing** | Default `Model=auto` uses Gemini models for sustained use; Claude/GPT require an explicit `--model` / `-m` |
 | 🎛️ | **Manual override** | Pin any supported model with `--model` / `-m` |
 | 📦 | **Isolated snapshots** | Review/edit tasks work on a copied workspace rather than your real project |
 | 🔐 | **Secret filtering** | Excludes `.env`, private keys, credentials, common DBs and high-confidence token patterns |
@@ -204,7 +204,7 @@ Model=auto
 Mode=auto
 ```
 
-AgySafe makes a lightweight routing decision from the task.
+AgySafe makes a lightweight **Gemini-first** routing decision from the task. Automatic routing never spends Claude/GPT quota implicitly; those models remain available through an explicit model override.
 
 ```mermaid
 flowchart TD
@@ -212,16 +212,17 @@ flowchart TD
     D -->|Simple| L["gemini-3.7-flash-low"]
     D -->|General dev / review| H["gemini-3.7-flash-high"]
     D -->|Architecture / cross-file| P["gemini-3.1-pro-high"]
-    D -->|Explicit Sonnet request| S["claude-sonnet-4-6"]
-    D -->|Critical deep review| O["claude-opus-4-6-thinking"]
-    M["--model / -m"] -->|manual override| X["Use requested model"]
+    M["--model / -m"] -->|explicit override| X["Claude / GPT / any AGY-supported model"]
 ```
 
-You can always override it:
+For example:
 
 ```text
 agysafe -m gemini-3.1-pro-high "analyze the architecture"
+agysafe -m claude-sonnet-4-6 "deep-review this module"
 ```
+
+> AgySafe reviews the **local workspace passed with `--workspace`**. A GitHub URL inside the task text is context only; v1.0.1 does not automatically clone or switch repositories.
 
 Detailed routing behavior: **[Architecture →](docs/ARCHITECTURE.md)**
 
@@ -306,12 +307,13 @@ Typical statuses include:
 | Status | Meaning |
 |---|---|
 | `SUCCESS` | Completed normally |
+| `QUOTA_EXCEEDED` | AGY/service quota was exhausted; receipt may include a reset hint and Gemini fallback |
 | `NETWORK_ERROR` | AGY/service/network connection failed |
 | `REGION_UNSUPPORTED` | Service reported a location restriction |
 | `WORKSPACE_ERROR` | AGY could not see/use the delegated workspace |
 | `PERMISSION_DENIED` | Required operation was denied |
 | `NO_OUTPUT` | Process ended without usable output |
-| `INCOMPLETE` | Review ended before producing a real result |
+| `INCOMPLETE` | AGY exited without a real final review/result even if its process exit code was 0 |
 | `NO_CHANGES` | Edit mode completed without changed files |
 | `SNAPSHOT_EMPTY` | Nothing safe/useful remained after snapshot filtering |
 
@@ -347,12 +349,12 @@ Full decision tree: **[Troubleshooting →](docs/TROUBLESHOOTING.md)**
 
 # ✅ What has been verified
 
-The v1.0 release path has been exercised with:
+The v1.0.0 release path was exercised with:
 
 - **OpenCode**: full project review through automatic model routing, isolated snapshot, filtering and real AGY output.
 - **Codex**: universal CLI invocation, automatic model selection and real AGY smoke test.
-- **Windows self-test**: fake-AGY review/edit path, snapshot isolation, secret filtering and manual model override.
-- **GitHub Actions**: Windows PowerShell parser + hermetic self-test workflow included in the repository.
+
+v1.0.1 expands the hermetic Windows self-test suite to cover review/edit isolation, secret filtering, manual model override, `--doctor`, quota classification and incomplete-output detection. The GitHub Actions workflow runs the suite on `windows-latest` after push/PR.
 
 AgySafe is still a young project. Reports from other agents and environments are welcome.
 

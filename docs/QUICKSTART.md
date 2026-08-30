@@ -55,11 +55,13 @@ The exact model may change if routing rules change in a later release.
 
 ## 4. Use it
 
-Automatic:
+Automatic (Gemini-first):
 
 ```text
 agysafe "review the current project"
 ```
+
+Automatic routing uses Gemini models only in v1.0.1. Claude/GPT are explicit-only.
 
 Manual model:
 
@@ -72,6 +74,8 @@ Agent-friendly JSON:
 ```text
 agysafe --workspace "." --json "review the current project"
 ```
+
+The task text does not change the local workspace. A GitHub URL inside the prompt is not automatically cloned; `real_workspace` in the receipt is the source of truth.
 
 ## 5. Host examples
 

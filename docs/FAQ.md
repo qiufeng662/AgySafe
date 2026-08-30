@@ -34,6 +34,16 @@ or:
 -m <slug>
 ```
 
+## Will `/agy review https://github.com/...` clone that repository?
+
+No, not in v1.0.1.
+
+The GitHub URL is prompt context only. AgySafe reviews the local workspace supplied with `--workspace`. Open the desired local project first, or pass its directory explicitly.
+
+## Does `Model=auto` ever choose Claude or GPT?
+
+No in v1.0.1. Automatic routing is Gemini-first so high-frequency use does not silently consume scarcer model quota. Claude/GPT remain available with `--model` / `-m`.
+
 ## Can Codex use it?
 
 Yes.
@@ -65,6 +75,10 @@ Local DBs can be sensitive, large, noisy, or unnecessary for source review. Comm
 ## Why did my model file disappear from the snapshot?
 
 Large files are skipped. Source-code review generally does not need multi-hundred-MB model weights.
+
+## What is `QUOTA_EXCEEDED`?
+
+The official AGY/service reported a quota limit such as `Individual quota reached`. This can be distinct from other account-level or weekly usage indicators. AgySafe surfaces the status and any parseable reset hint instead of treating it as a network failure.
 
 ## Why does `NETWORK_ERROR` not trigger a retry?
 

@@ -82,6 +82,18 @@ AgySafe completed normally.
 
 If the result content is poor, that is a task/model quality issue rather than an execution failure.
 
+## `QUOTA_EXCEEDED`
+
+AGY/service reported that the selected model or account-level bucket has reached a quota limit. The receipt may include:
+
+```text
+quota_type
+reset_hint
+recommended_fallback
+```
+
+For an explicitly selected Claude/GPT model, AgySafe may recommend `gemini-3.7-flash-high`. It does **not** silently rerun or switch models.
+
 ## `NETWORK_ERROR`
 
 AgySafe launched AGY, but the AGY/service/network connection failed.
@@ -133,9 +145,9 @@ Check direct AGY behavior and the run's handoff file.
 
 ## `INCOMPLETE`
 
-A review returned only a plan/opening sentence rather than concrete findings.
+A review ended with planning/synthesis language rather than a real final result. AgySafe can classify this as `INCOMPLETE` even when official AGY exits with code 0.
 
-This can happen when an AGY session stops while producing a long final answer.
+This has been observed on long agentic reviews where research/tool work completed but the final report was never emitted.
 
 Try a shorter task or a different model once; do not automatically loop retries.
 
@@ -158,6 +170,22 @@ Nothing safe/useful remained after filtering.
 Inspect `excluded_files`.
 
 The repository may consist mostly of generated, sensitive, database, dependency, or oversized files.
+
+---
+
+# GitHub URL in the task reviewed the wrong project
+
+AgySafe v1.0.1 does not automatically clone a repository from a URL embedded in the task. The actual target is the local `--workspace` supplied by the host.
+
+Check the receipt:
+
+```text
+real_workspace
+workspace_source
+workspace_note
+```
+
+OpenCode `/agy` should surface `real_workspace` rather than claiming that a prompt URL was the reviewed repository.
 
 ---
 

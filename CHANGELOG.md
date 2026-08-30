@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.0.1 - 2026-08-30
+
+Reliability update based on real long-running AGY review diagnostics.
+
+### Routing
+
+- Changed `Model=auto` to **Gemini-first** routing for sustained/high-frequency use.
+- Automatic routing no longer selects Claude/GPT implicitly, even if those model names appear in the task text.
+- Claude/GPT and other AGY-supported models remain available through explicit `--model` / `-m` overrides.
+
+### Reliability and diagnostics
+
+- Added `QUOTA_EXCEEDED` classification for AGY/service quota messages such as `Individual quota reached`.
+- Added optional `quota_type` and `reset_hint` receipt fields.
+- Added `recommended_fallback` for Claude/GPT `QUOTA_EXCEEDED`, `INCOMPLETE`, or `NETWORK_ERROR` results; AgySafe never silently reruns on another model.
+- Improved `INCOMPLETE` detection for long reviews where official AGY exits 0 after research/tool work but ends with planning-only language instead of a final report.
+- Added `workspace_source` and `workspace_note` receipt fields; prompt-embedded GitHub URLs are explicitly treated as context rather than repository selectors.
+- CLI and OpenCode integration now surface the actual local `real_workspace` more clearly.
+
+### Fixes and tests
+
+- Fixed the PowerShell 5.1 `--doctor` variable-name collision (`$Doctor` vs `$doctor`).
+- Hardened isolated-edit self-test assertions for Windows PowerShell array behavior.
+- Expanded fake-AGY tests to cover `--doctor`, Gemini-first premium-model protection, quota parsing/fallback, and exit-0 incomplete reviews.
+- Updated README/docs/agent guidance for local-workspace semantics and the new status fields.
+
 ## 1.0.0 - 2026-08-29
 
 First public release.

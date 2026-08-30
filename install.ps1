@@ -85,7 +85,7 @@ function Add-MarkedBlock {
 }
 
 Write-Host ""
-Write-Host "AgySafe v1.0.0"
+Write-Host "AgySafe v1.0.1"
 Write-Host "---------------"
 
 Write-Host "[1/5] Running local self-test..."

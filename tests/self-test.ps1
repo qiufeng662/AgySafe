@@ -58,14 +58,9 @@ try {
 
     if ($edit.status -ne "SUCCESS") { throw "edit status: $($edit.status)" }
     $changed = @($edit.changed_files)
-    if ($changed.Count -lt 1) {
-        throw "edit returned SUCCESS but changed_files was empty"
-    }
-
+    if ($changed.Count -lt 1) { throw "edit returned SUCCESS but changed_files was empty" }
     $isolatedEdit = Join-Path $edit.delegated_workspace "edited_by_fake.txt"
-    if (-not (Test-Path -LiteralPath $isolatedEdit)) {
-        throw "isolated edit file missing from delegated workspace"
-    }
+    if (-not (Test-Path -LiteralPath $isolatedEdit)) { throw "isolated edit file missing from delegated workspace" }
     if (Test-Path -LiteralPath (Join-Path $project "edited_by_fake.txt")) { throw "real project was modified" }
 
     # Universal GNU-style CLI path, including manual model override.
@@ -83,6 +78,49 @@ try {
     if ($cliResult.status -ne "SUCCESS") { throw "universal CLI status: $($cliResult.status)" }
     if ($cliResult.selected_model -ne "claude-sonnet-4-6") { throw "universal CLI model override failed" }
     if ($cliResult.mode -ne "review") { throw "universal CLI mode override failed" }
+
+    # Auto routing must remain Gemini-first even when the task text mentions Claude.
+    $autoPremiumJson = & $runner `
+        -Task "请用 Claude Opus 深度审查当前项目" `
+        -Workspace $project `
+        -Mode review `
+        -Model auto `
+        -Json
+    $autoPremium = $autoPremiumJson | ConvertFrom-Json
+    if ($autoPremium.selected_model -ne "gemini-3.7-flash-high") { throw "auto routing selected a premium model implicitly" }
+
+    # Doctor path, including the PowerShell 5.1 $Doctor/$doctor collision regression.
+    $doctorJson = & $cli --doctor --json
+    $doctorResult = ($doctorJson -join "`n") | ConvertFrom-Json
+    if ($doctorResult.status -ne "OK") { throw "doctor status: $($doctorResult.status)" }
+    if ($doctorResult.agy_version -notmatch '1\.1\.22-test') { throw "doctor version check failed" }
+
+    # Explicit quota classification and fallback recommendation.
+    $env:AGYSAFE_TEST_MODE = "quota"
+    $quotaJson = & $runner `
+        -Task "审查当前项目" `
+        -Workspace $project `
+        -Mode review `
+        -Model claude-opus-4-6-thinking `
+        -Json
+    $quota = $quotaJson | ConvertFrom-Json
+    if ($quota.status -ne "QUOTA_EXCEEDED") { throw "quota classification failed: $($quota.status)" }
+    if ($quota.quota_type -ne "individual") { throw "quota type parsing failed" }
+    if ($quota.reset_hint -notmatch '4h5m0s') { throw "quota reset hint parsing failed" }
+    if ($quota.recommended_fallback -ne "gemini-3.7-flash-high") { throw "quota fallback recommendation failed" }
+
+    # Exit code 0 is not sufficient for SUCCESS when a review ends at a planning-only tail.
+    $env:AGYSAFE_TEST_MODE = "incomplete"
+    $incompleteJson = & $runner `
+        -Task "审查当前项目" `
+        -Workspace $project `
+        -Mode review `
+        -Model claude-opus-4-6-thinking `
+        -Json
+    $incomplete = $incompleteJson | ConvertFrom-Json
+    if ($incomplete.agy_exit_code -ne 0) { throw "incomplete fixture should exit 0" }
+    if ($incomplete.status -ne "INCOMPLETE") { throw "incomplete classification failed: $($incomplete.status)" }
+    if ($incomplete.recommended_fallback -ne "gemini-3.7-flash-high") { throw "incomplete fallback recommendation failed" }
 
     Write-Host "AgySafe self-test: PASS"
 }

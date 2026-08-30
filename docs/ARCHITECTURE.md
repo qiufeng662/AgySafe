@@ -101,6 +101,8 @@ workspace = current directory
 
 This is why AgySafe can support many agents without writing a new execution engine for each one.
 
+The workspace contract is local: a URL written inside the task prompt does not replace `--workspace`. Hosts should report `real_workspace` from the receipt instead of inferring the reviewed repository from prompt text.
+
 ## 3. Mode routing
 
 AgySafe classifies tasks into:
@@ -119,18 +121,18 @@ The classification is deliberately lightweight.
 
 ## 4. Model routing
 
-Current default routing is intentionally simple:
+Current default routing is intentionally simple and **Gemini-first**:
 
 | Task class | Model |
 |---|---|
 | simple | `gemini-3.7-flash-low` |
 | general development | `gemini-3.7-flash-high` |
 | normal review | `gemini-3.7-flash-high` |
-| architecture/cross-file | `gemini-3.1-pro-high` |
-| explicit Sonnet request | `claude-sonnet-4-6` |
-| explicit critical deep review | `claude-opus-4-6-thinking` |
+| architecture/cross-file/deep architecture | `gemini-3.1-pro-high` |
 
-Manual `--model` overrides automatic routing.
+Claude, GPT, and other AGY-supported models are **explicit-only** in v1.0.1. Mentioning a model name inside the task does not spend that model's quota automatically; use `--model` / `-m` when you actually want it.
+
+Manual `--model` always overrides automatic routing.
 
 This is a policy layer, not an AGY protocol feature, and may evolve independently.
 
@@ -214,6 +216,7 @@ Receipts make AgySafe easier for another agent/LLM to diagnose.
 AgySafe distinguishes common failure classes:
 
 ```text
+QUOTA_EXCEEDED
 NETWORK_ERROR
 REGION_UNSUPPORTED
 WORKSPACE_ERROR

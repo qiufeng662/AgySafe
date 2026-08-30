@@ -6,9 +6,14 @@ description: 通过 AgySafe 使用 Antigravity
 不要调用旧版 Python AgySafe、旧版 `scripts\agysafe.ps1`，也不要绕到其他 AgySafe runner。
 
 默认：
-- Model=auto
+- Model=auto（Gemini-first；不会自动选择 Claude/GPT）
 - Mode=auto
 - Workspace=当前 OpenCode 项目目录
+
+重要：
+- `$ARGUMENTS` 里的 GitHub URL 只是任务文本，不会改变 workspace，也不会自动 clone 仓库。
+- 执行完成后，以 JSON receipt 的 `real_workspace` 为实际审查目标，不要根据提示词里的 URL 猜测仓库。
+- 向用户汇报时明确显示实际 `real_workspace`。
 
 可选参数：
 - `--model <slug>` 或 `-m <slug>`
@@ -48,5 +53,5 @@ agysafe --workspace "<current project directory>" --model claude-sonnet-4-6 --js
 agysafe --workspace "<current project directory>" -m gemini-3.1-pro-high --json "分析整个项目架构"
 ```
 
-成功时直接返回实际 AGY 结果和实际 selected_model。
-非 SUCCESS 时只简洁报告真实状态，不假装完成，不自行连续重试。
+成功时直接返回实际 AGY 结果、实际 `selected_model` 和 `real_workspace`。
+非 SUCCESS 时只简洁报告真实状态，不假装完成，不自行连续重试；若 receipt 包含 `recommended_fallback` 或 `reset_hint`，一并提示。

@@ -6,7 +6,7 @@
 
 **官方 AGY CLI · 不绑定单一 Agent · 本地优先 · 默认安全**
 
-[![Release](https://img.shields.io/badge/release-v1.0.0-2ea44f?style=flat-square)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v1.0.1-2ea44f?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-PowerShell%205.1%2B-0078D4?style=flat-square&logo=windows)](#运行要求)
 [![AGY](https://img.shields.io/badge/runtime-official%20agy-4285F4?style=flat-square)](#它是怎么工作的)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -70,7 +70,7 @@ AgySafe 不想成为另一个庞大的 AI 框架。
 | | 功能 | 说明 |
 |---|---|---|
 | 🤖 | **Agent 无关** | 核心不属于 OpenCode、Codex 或其他某一个宿主 |
-| 🧠 | **自动选模型** | 默认 `Model=auto`，根据任务自动路由 |
+| 🧠 | **Gemini-first 自动选模型** | 默认 `Model=auto` 高强度优先使用 Gemini；Claude/GPT 只有显式 `--model` / `-m` 才会调用 |
 | 🎛️ | **手动指定模型** | 随时用 `--model` / `-m` 覆盖自动选择 |
 | 📦 | **隔离快照** | 审查和修改默认发生在真实项目的隔离副本 |
 | 🔐 | **Secret Filter** | 自动排除 `.env`、私钥、凭据、常见数据库等 |
@@ -225,7 +225,7 @@ Model=auto
 Mode=auto
 ```
 
-AgySafe 根据任务做一个轻量路由：
+AgySafe 根据任务做一个轻量的 **Gemini-first** 路由。自动模式不会因为提示词里写了 Claude/GPT 就隐式消耗这些稀缺额度；需要时请显式指定模型。
 
 ```mermaid
 flowchart TD
@@ -233,16 +233,17 @@ flowchart TD
     D -->|简单| L["gemini-3.7-flash-low"]
     D -->|普通开发 / 审查| H["gemini-3.7-flash-high"]
     D -->|架构 / 跨文件| P["gemini-3.1-pro-high"]
-    D -->|明确要求 Sonnet| S["claude-sonnet-4-6"]
-    D -->|重大深度审计| O["claude-opus-4-6-thinking"]
-    M["--model / -m"] -->|手动覆盖| X["使用指定模型"]
+    M["--model / -m"] -->|显式覆盖| X["Claude / GPT / 任意 AGY 支持模型"]
 ```
 
-用户永远可以手动指定：
+例如：
 
 ```text
 agysafe -m gemini-3.1-pro-high "分析整个架构"
+agysafe -m claude-sonnet-4-6 "深度审查这个模块"
 ```
+
+> AgySafe 审查的是 `--workspace` 指向的**本地工作区**。提示词里的 GitHub URL 目前只是上下文，v1.0.1 不会自动 clone 或切换仓库。
 
 ---
 
@@ -331,12 +332,13 @@ agysafe --workspace "." --json --timeout 2 "只回复 OK"
 | 状态 | 含义 |
 |---|---|
 | `SUCCESS` | 正常完成 |
+| `QUOTA_EXCEEDED` | AGY / 服务额度耗尽；回执可提供 reset 提示与 Gemini fallback |
 | `NETWORK_ERROR` | 官方 AGY / 服务 / 网络连接失败 |
 | `REGION_UNSUPPORTED` | 服务返回地区限制 |
 | `WORKSPACE_ERROR` | AGY 没有正确看到隔离 workspace |
 | `PERMISSION_DENIED` | 所需操作被拒绝 |
 | `NO_OUTPUT` | 进程结束但没有可用结果 |
-| `INCOMPLETE` | 审查只输出了开头，未形成真实结论 |
+| `INCOMPLETE` | AGY 即使 exit code=0，也没有真正输出最终审查/结果 |
 | `NO_CHANGES` | edit 模式未产生修改 |
 | `SNAPSHOT_EMPTY` | 过滤后没有可委托的项目文件 |
 
@@ -377,12 +379,12 @@ agysafe --workspace "." --json --timeout 2 "只回复 OK"
 
 # ✅ 已验证内容
 
-v1.0 当前已经实际验证：
+v1.0.0 已经实际验证：
 
 - **OpenCode**：完整项目 review、自动模型、隔离快照、过滤、真实 AGY 结果；
-- **Codex**：Universal CLI、自动模型、真实 AGY smoke test；
-- **Windows 本地自测**：fake-AGY review/edit、隔离、Secret Filter、手动模型覆盖；
-- **GitHub Actions**：仓库包含 Windows PowerShell 解析与 hermetic self-test。
+- **Codex**：Universal CLI、自动模型、真实 AGY smoke test。
+
+v1.0.1 扩展了 Windows hermetic self-test，覆盖 review/edit 隔离、Secret Filter、手动模型覆盖、`--doctor`、quota 分类与 incomplete 检测。推送或 PR 后，GitHub Actions 会在 `windows-latest` 上执行这套测试。
 
 这是一个年轻项目，但核心链路已经能够实际工作。
 
