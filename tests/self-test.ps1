@@ -50,7 +50,8 @@ try {
     if (Test-Path -LiteralPath (Join-Path $review.delegated_workspace "node_modules")) { throw "node_modules leaked" }
     if (Test-Path -LiteralPath (Join-Path $review.delegated_workspace "sample.dta")) { throw ".dta should be excluded by default" }
     if (Test-Path -LiteralPath (Join-Path $review.delegated_workspace "sample.xlsx")) { throw ".xlsx should be excluded by default" }
-    if (-not (Test-Path -LiteralPath (Join-Path $review.delegated_workspace "fixture.csv"))) { throw "small CSV should remain eligible by default" }
+    $csvExclusions = @($review.excluded_files | Where-Object { $_.path -eq "fixture.csv" })
+    if ($csvExclusions.Count -gt 0) { throw ("small CSV should remain eligible by default: " + $csvExclusions[0].reason) }
     if ($review.snapshot_limit_mb -ne 128) { throw "default snapshot limit changed unexpectedly" }
     if ($review.snapshot_bytes -le 0) { throw "snapshot size metrics missing" }
 
