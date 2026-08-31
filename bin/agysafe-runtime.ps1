@@ -294,6 +294,31 @@ function Get-SnapshotRootBreakdown {
     return @($items | Sort-Object bytes -Descending | Select-Object -First 8)
 }
 
+function Get-AgySafeRelativePath {
+    param(
+        [string]$Root,
+        [string]$FullPath
+    )
+
+    # Canonicalize both paths before deriving the relative path.
+    # Raw string-length slicing can be wrong when PowerShell/.NET returns
+    # equivalent Windows paths in different canonical forms.
+    $rootFull = [System.IO.Path]::GetFullPath([string]$Root).Replace('/', '\').TrimEnd([char[]]@('\'))
+    $pathFull = [System.IO.Path]::GetFullPath([string]$FullPath).Replace('/', '\')
+
+    $rootLower = $rootFull.ToLowerInvariant()
+    $pathLower = $pathFull.ToLowerInvariant()
+
+    if ($pathLower -eq $rootLower) { return '' }
+
+    $prefix = $rootFull + '\'
+    $prefixLower = $prefix.ToLowerInvariant()
+    if (-not $pathLower.StartsWith($prefixLower)) {
+        throw "Snapshot path escaped workspace root: $pathFull"
+    }
+
+    return $pathFull.Substring($prefix.Length)
+}
 function New-SafeSnapshot {
     param(
         [string]$Source,
@@ -326,7 +351,7 @@ function New-SafeSnapshot {
         $pending.RemoveAt($index)
 
         foreach ($childDir in @(Get-ChildItem -LiteralPath $dir.FullName -Directory -Force -ErrorAction SilentlyContinue)) {
-            $relative = $childDir.FullName.Substring($Source.Length).TrimStart('\')
+            $relative = Get-AgySafeRelativePath -Root $Source -FullPath $childDir.FullName
 
             if (Test-WindowsReservedName $childDir.Name) {
                 $excluded += [pscustomobject]@{ path = $relative; reason = "Windows reserved device name" }
@@ -353,7 +378,7 @@ function New-SafeSnapshot {
         }
 
         foreach ($file in @(Get-ChildItem -LiteralPath $dir.FullName -File -Force -ErrorAction SilentlyContinue)) {
-            $relative = $file.FullName.Substring($Source.Length).TrimStart('\')
+            $relative = Get-AgySafeRelativePath -Root $Source -FullPath $file.FullName
 
             if (Test-WindowsReservedName $file.Name) {
                 $excluded += [pscustomobject]@{ path = $relative; reason = "Windows reserved device name" }
