@@ -164,7 +164,7 @@ function Get-AgySafeIgnorePatterns {
 
     $patterns = @()
     foreach ($line in @([System.IO.File]::ReadAllLines($ignorePath, [System.Text.Encoding]::UTF8))) {
-        $item = ([string]$line).Trim()
+        $item = ([string]$line).Trim().TrimStart([char]0xFEFF)
         if ([string]::IsNullOrWhiteSpace($item)) { continue }
         if ($item.StartsWith("#")) { continue }
         if ($item.StartsWith("!")) { continue } # Negation is intentionally unsupported in v1.0.2.
@@ -186,11 +186,15 @@ function Get-AgySafeIgnoreMatch {
     foreach ($rawPattern in @($Patterns)) {
         if ([string]::IsNullOrWhiteSpace($rawPattern)) { continue }
 
-        $pattern = $rawPattern.Replace('\', '/').TrimStart('/')
+        $pattern = $rawPattern.Replace('\', '/').TrimStart('/').TrimStart([char]0xFEFF)
 
+        # Directory rules such as `outputs/` use ordinal prefix matching rather than
+        # PowerShell wildcard semantics. This is stable across Windows PowerShell 5.1
+        # environments and also covers all descendants of the ignored directory.
         if ($pattern.EndsWith('/')) {
-            $prefix = $pattern.TrimEnd('/')
-            if ($normalized -like $prefix -or $normalized -like ($prefix + '/*')) {
+            $prefix = $pattern.Substring(0, $pattern.Length - 1)
+            if ([string]::Equals($normalized, $prefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+                $normalized.StartsWith(($prefix + '/'), [System.StringComparison]::OrdinalIgnoreCase)) {
                 return $rawPattern
             }
             continue
