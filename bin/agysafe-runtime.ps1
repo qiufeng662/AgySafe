@@ -208,34 +208,55 @@ function Get-AgySafeIgnoreMatch {
         [string[]]$Patterns
     )
 
-    $normalized = $RelativePath.Replace('\', '/').TrimStart('/')
+    # Keep ignore matching deliberately simple and deterministic for Windows
+    # PowerShell 5.1. Avoid overload-sensitive StartsWith/Equals calls here:
+    # normalize once, compare lower-cased strings, and inspect path segments.
+    $normalized = ([string]$RelativePath).Replace('\', '/').Trim()
+    while ($normalized.StartsWith('./')) { $normalized = $normalized.Substring(2) }
+    $normalized = $normalized.TrimStart([char[]]@('/'))
+    $candidate = $normalized.ToLowerInvariant()
 
     foreach ($rawPattern in @($Patterns)) {
-        if ([string]::IsNullOrWhiteSpace($rawPattern)) { continue }
+        if ([string]::IsNullOrWhiteSpace([string]$rawPattern)) { continue }
 
-        $pattern = $rawPattern.Replace('\', '/').TrimStart('/').TrimStart([char]0xFEFF)
+        $pattern = ([string]$rawPattern).Trim().TrimStart([char]0xFEFF).Replace('\', '/')
+        while ($pattern.StartsWith('./')) { $pattern = $pattern.Substring(2) }
+        $pattern = $pattern.TrimStart([char[]]@('/'))
+        if ([string]::IsNullOrWhiteSpace($pattern)) { continue }
 
-        # Directory rules such as `outputs/` use ordinal prefix matching rather than
-        # PowerShell wildcard semantics. This is stable across Windows PowerShell 5.1
-        # environments and also covers all descendants of the ignored directory.
-        if ($pattern.EndsWith('/')) {
-            $prefix = $pattern.Substring(0, $pattern.Length - 1)
-            if ([string]::Equals($normalized, $prefix, [System.StringComparison]::OrdinalIgnoreCase) -or
-                $normalized.StartsWith(($prefix + '/'), [System.StringComparison]::OrdinalIgnoreCase)) {
-                return $rawPattern
+        $directoryRule = $pattern.EndsWith('/')
+        if ($directoryRule) {
+            $rule = $pattern.Substring(0, $pattern.Length - 1).TrimEnd([char[]]@('/')).ToLowerInvariant()
+            if ([string]::IsNullOrWhiteSpace($rule)) { continue }
+
+            # Root-relative directory rule: outputs/ matches outputs and everything below it.
+            if ($candidate -eq $rule) { return [string]$rawPattern }
+            if ($candidate.Length -gt $rule.Length -and
+                $candidate.Substring(0, $rule.Length) -eq $rule -and
+                $candidate[$rule.Length] -eq '/') {
+                return [string]$rawPattern
             }
+
+            # A directory rule without a slash also matches a directory segment at
+            # any depth, mirroring the useful subset of .gitignore users expect.
+            if (-not $rule.Contains('/')) {
+                foreach ($segment in @($candidate.Split('/'))) {
+                    if ($segment -eq $rule) { return [string]$rawPattern }
+                }
+            }
+
             continue
         }
 
-        if ($normalized -like $pattern) {
-            return $rawPattern
-        }
+        $rulePattern = $pattern.ToLowerInvariant()
 
-        if (-not $pattern.Contains('/')) {
-            foreach ($segment in @($normalized.Split('/'))) {
-                if ($segment -like $pattern) {
-                    return $rawPattern
-                }
+        # Path-aware wildcard rule.
+        if ($candidate -like $rulePattern) { return [string]$rawPattern }
+
+        # Basename/segment wildcard rule such as *.log or *.csv.
+        if (-not $rulePattern.Contains('/')) {
+            foreach ($segment in @($candidate.Split('/'))) {
+                if ($segment -like $rulePattern) { return [string]$rawPattern }
             }
         }
     }
