@@ -162,13 +162,40 @@ function Get-AgySafeIgnorePatterns {
         return @()
     }
 
+    # Decode deterministically across Windows PowerShell 5.1, PowerShell 7,
+    # UTF-8 with/without BOM, and UTF-16 BOM files. BOM-less files are UTF-8.
+    $bytes = [System.IO.File]::ReadAllBytes($ignorePath)
+    if ($bytes.Length -eq 0) { return @() }
+
+    $offset = 0
+    $encoding = New-Object System.Text.UTF8Encoding($false)
+
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        $offset = 3
+    }
+    elseif ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+        $offset = 2
+        $encoding = [System.Text.Encoding]::Unicode
+    }
+    elseif ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF) {
+        $offset = 2
+        $encoding = [System.Text.Encoding]::BigEndianUnicode
+    }
+
+    $text = $encoding.GetString($bytes, $offset, $bytes.Length - $offset)
     $patterns = @()
-    foreach ($line in @([System.IO.File]::ReadAllLines($ignorePath, [System.Text.Encoding]::UTF8))) {
+
+    foreach ($line in @([System.Text.RegularExpressions.Regex]::Split($text, "`r`n|`n|`r"))) {
         $item = ([string]$line).Trim().TrimStart([char]0xFEFF)
         if ([string]::IsNullOrWhiteSpace($item)) { continue }
         if ($item.StartsWith("#")) { continue }
         if ($item.StartsWith("!")) { continue } # Negation is intentionally unsupported in v1.0.2.
-        $patterns += $item.Replace('\', '/').TrimStart('/')
+
+        $item = $item.Replace('\', '/').TrimStart('/')
+        while ($item.StartsWith("./")) { $item = $item.Substring(2) }
+        if ([string]::IsNullOrWhiteSpace($item)) { continue }
+
+        $patterns += $item
     }
 
     return @($patterns)

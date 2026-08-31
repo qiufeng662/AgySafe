@@ -124,19 +124,33 @@ try {
     if ($large.snapshot_mb -le $large.snapshot_limit_mb) { throw "oversized snapshot metrics invalid" }
     if (@($large.largest_snapshot_roots).Count -lt 1) { throw "largest snapshot roots missing" }
 
-    # .agysafeignore should slim the same project enough to proceed.
-    Set-Content -LiteralPath (Join-Path $largeProject ".agysafeignore") -Value "outputs/" -Encoding UTF8
+    # Test .agysafeignore matching independently from the snapshot-size threshold.
+    # The large-workspace guard is already validated above. Keeping these assertions
+    # separate makes CI failures identify parsing/matching rather than conflate both.
+    $ignoreFixture = Join-Path $largeProject ".agysafeignore"
+    [System.IO.File]::WriteAllText($ignoreFixture, "outputs/`r`n", (New-Object System.Text.UTF8Encoding($false)))
+
     $ignoredJson = & $runner `
         -Task "审查当前项目" `
         -Workspace $largeProject `
         -Mode review `
         -Model auto `
-        -MaxSnapshotMB 1 `
+        -MaxSnapshotMB 8 `
         -Json
     $ignored = $ignoredJson | ConvertFrom-Json
     if ($ignored.status -ne "SUCCESS") { throw ".agysafeignore review failed: $($ignored.status)" }
-    if (-not $ignored.agysafeignore_used) { throw ".agysafeignore usage not reported" }
+    if (-not $ignored.agysafeignore_used) { throw ".agysafeignore file was not parsed" }
+
+    $outputExclusion = @($ignored.excluded_files | Where-Object {
+        $_.path -eq "outputs" -and $_.reason -like "matched .agysafeignore:*"
+    })
+    if ($outputExclusion.Count -ne 1) {
+        $debugExcluded = (@($ignored.excluded_files | ForEach-Object { $_.path + " => " + $_.reason }) -join "; ")
+        throw ".agysafeignore outputs/ rule was not applied. Excluded: $debugExcluded"
+    }
+
     if (Test-Path -LiteralPath (Join-Path $ignored.delegated_workspace "outputs")) { throw ".agysafeignore directory leaked" }
+    if ($ignored.snapshot_bytes -ge 1MB) { throw ".agysafeignore did not slim snapshot below 1 MB" }
 
     # Doctor path, including the PowerShell 5.1 $Doctor/$doctor collision regression.
     $doctorJson = & $cli --doctor --json
