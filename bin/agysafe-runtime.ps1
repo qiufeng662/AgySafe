@@ -7,6 +7,8 @@ param(
     [string]$Model = "auto",
     [ValidateRange(1, 60)]
     [int]$TimeoutMinutes = 10,
+    [ValidateRange(1, 2048)]
+    [int]$MaxSnapshotMB = 128,
     [string]$AgyPath,
     [switch]$Json,
     [switch]$Doctor
@@ -60,7 +62,7 @@ function Resolve-AgySafeMode {
 function Resolve-AgySafeModel {
     param([string]$Text, [string]$ResolvedMode, [string]$Requested)
 
-    # v1.0.1 is Gemini-first by default. Premium/limited models such as
+    # v1.0.2 remains Gemini-first by default. Premium/limited models such as
     # Claude or GPT are never selected implicitly; users can still request
     # any AGY-supported model explicitly with --model / -m.
     if ($Requested -ne "auto") { return $Requested }
@@ -152,8 +154,100 @@ function Test-HighConfidenceSecret {
     return $false
 }
 
+function Get-AgySafeIgnorePatterns {
+    param([string]$Source)
+
+    $ignorePath = Join-Path $Source ".agysafeignore"
+    if (-not (Test-Path -LiteralPath $ignorePath -PathType Leaf)) {
+        return @()
+    }
+
+    $patterns = @()
+    foreach ($line in @([System.IO.File]::ReadAllLines($ignorePath, [System.Text.Encoding]::UTF8))) {
+        $item = ([string]$line).Trim()
+        if ([string]::IsNullOrWhiteSpace($item)) { continue }
+        if ($item.StartsWith("#")) { continue }
+        if ($item.StartsWith("!")) { continue } # Negation is intentionally unsupported in v1.0.2.
+        $patterns += $item.Replace('\', '/').TrimStart('/')
+    }
+
+    return @($patterns)
+}
+
+function Get-AgySafeIgnoreMatch {
+    param(
+        [string]$RelativePath,
+        [bool]$IsDirectory,
+        [string[]]$Patterns
+    )
+
+    $normalized = $RelativePath.Replace('\', '/').TrimStart('/')
+
+    foreach ($rawPattern in @($Patterns)) {
+        if ([string]::IsNullOrWhiteSpace($rawPattern)) { continue }
+
+        $pattern = $rawPattern.Replace('\', '/').TrimStart('/')
+
+        if ($pattern.EndsWith('/')) {
+            $prefix = $pattern.TrimEnd('/')
+            if ($normalized -like $prefix -or $normalized -like ($prefix + '/*')) {
+                return $rawPattern
+            }
+            continue
+        }
+
+        if ($normalized -like $pattern) {
+            return $rawPattern
+        }
+
+        if (-not $pattern.Contains('/')) {
+            foreach ($segment in @($normalized.Split('/'))) {
+                if ($segment -like $pattern) {
+                    return $rawPattern
+                }
+            }
+        }
+    }
+
+    return $null
+}
+
+function Test-DefaultDataOrBinaryFile {
+    param([System.IO.FileInfo]$File)
+
+    $extension = $File.Extension.ToLowerInvariant()
+    return $extension -in @(
+        ".dta", ".xlsx", ".xls", ".xlsb",
+        ".parquet", ".feather", ".arrow",
+        ".sav", ".sas7bdat", ".rdata", ".rds",
+        ".pkl", ".pickle", ".joblib",
+        ".npy", ".npz", ".h5", ".hdf5",
+        ".pt", ".pth", ".onnx"
+    )
+}
+
+function Get-SnapshotRootBreakdown {
+    param([hashtable]$RootBytes)
+
+    $items = @()
+    foreach ($key in $RootBytes.Keys) {
+        $bytes = [int64]$RootBytes[$key]
+        $items += [pscustomobject]@{
+            path = $key
+            bytes = $bytes
+            mb = [Math]::Round($bytes / 1MB, 2)
+        }
+    }
+
+    return @($items | Sort-Object bytes -Descending | Select-Object -First 8)
+}
+
 function New-SafeSnapshot {
-    param([string]$Source, [string]$Destination)
+    param(
+        [string]$Source,
+        [string]$Destination,
+        [int64]$MaxSnapshotBytes
+    )
 
     $excludedDirNames = @(
         ".git", ".svn", ".hg", ".idea",
@@ -162,8 +256,12 @@ function New-SafeSnapshot {
         ".ssh", ".aws", ".azure", ".kube"
     )
 
+    $ignorePatterns = @(Get-AgySafeIgnorePatterns $Source)
     $included = @()
     $excluded = @()
+    $candidates = New-Object System.Collections.ArrayList
+    $rootBytes = @{}
+    [int64]$candidateBytes = 0
 
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 
@@ -188,6 +286,12 @@ function New-SafeSnapshot {
                 continue
             }
 
+            $ignoreMatch = Get-AgySafeIgnoreMatch $relative $true $ignorePatterns
+            if ($ignoreMatch) {
+                $excluded += [pscustomobject]@{ path = $relative; reason = ("matched .agysafeignore: " + $ignoreMatch) }
+                continue
+            }
+
             if (($childDir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
                 $excluded += [pscustomobject]@{ path = $relative; reason = "reparse point" }
                 continue
@@ -204,8 +308,19 @@ function New-SafeSnapshot {
                 continue
             }
 
+            $ignoreMatch = Get-AgySafeIgnoreMatch $relative $false $ignorePatterns
+            if ($ignoreMatch) {
+                $excluded += [pscustomobject]@{ path = $relative; reason = ("matched .agysafeignore: " + $ignoreMatch) }
+                continue
+            }
+
             if (Test-SensitiveFileName $file) {
                 $excluded += [pscustomobject]@{ path = $relative; reason = "sensitive filename" }
+                continue
+            }
+
+            if (Test-DefaultDataOrBinaryFile $file) {
+                $excluded += [pscustomobject]@{ path = $relative; reason = "default data/binary exclusion" }
                 continue
             }
 
@@ -219,19 +334,55 @@ function New-SafeSnapshot {
                 continue
             }
 
-            $target = Join-Path $Destination $relative
-            $targetDir = Split-Path -Parent $target
+            [void]$candidates.Add([pscustomobject]@{
+                file = $file
+                relative = $relative
+                bytes = [int64]$file.Length
+            })
+            $candidateBytes += [int64]$file.Length
 
-            try {
-                New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-                Copy-Item -LiteralPath $file.FullName -Destination $target -Force -ErrorAction Stop
-                $included += $relative
-            }
-            catch {
-                $excluded += [pscustomobject]@{
-                    path = $relative
-                    reason = ("copy skipped: " + $_.Exception.Message)
-                }
+            $normalized = $relative.Replace('\', '/')
+            $slash = $normalized.IndexOf('/')
+            $rootName = if ($slash -ge 0) { $normalized.Substring(0, $slash) } else { "(root)" }
+            if (-not $rootBytes.ContainsKey($rootName)) { $rootBytes[$rootName] = [int64]0 }
+            $rootBytes[$rootName] = [int64]$rootBytes[$rootName] + [int64]$file.Length
+        }
+    }
+
+    $largestRoots = @(Get-SnapshotRootBreakdown $rootBytes)
+    $tooLarge = ($candidateBytes -gt $MaxSnapshotBytes)
+
+    if ($tooLarge) {
+        return [pscustomobject]@{
+            included = @()
+            excluded = @($excluded)
+            candidate_file_count = $candidates.Count
+            snapshot_bytes = $candidateBytes
+            snapshot_mb = [Math]::Round($candidateBytes / 1MB, 2)
+            snapshot_limit_mb = [Math]::Round($MaxSnapshotBytes / 1MB, 2)
+            largest_snapshot_roots = $largestRoots
+            ignore_file_used = ($ignorePatterns.Count -gt 0)
+            too_large = $true
+        }
+    }
+
+    [int64]$copiedBytes = 0
+    foreach ($candidate in @($candidates)) {
+        $file = $candidate.file
+        $relative = $candidate.relative
+        $target = Join-Path $Destination $relative
+        $targetDir = Split-Path -Parent $target
+
+        try {
+            New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+            Copy-Item -LiteralPath $file.FullName -Destination $target -Force -ErrorAction Stop
+            $included += $relative
+            $copiedBytes += [int64]$candidate.bytes
+        }
+        catch {
+            $excluded += [pscustomobject]@{
+                path = $relative
+                reason = ("copy skipped: " + $_.Exception.Message)
             }
         }
     }
@@ -239,6 +390,13 @@ function New-SafeSnapshot {
     return [pscustomobject]@{
         included = @($included)
         excluded = @($excluded)
+        candidate_file_count = $candidates.Count
+        snapshot_bytes = $copiedBytes
+        snapshot_mb = [Math]::Round($copiedBytes / 1MB, 2)
+        snapshot_limit_mb = [Math]::Round($MaxSnapshotBytes / 1MB, 2)
+        largest_snapshot_roots = $largestRoots
+        ignore_file_used = ($ignorePatterns.Count -gt 0)
+        too_large = $false
     }
 }
 
@@ -574,7 +732,77 @@ if ($resolvedMode -eq "ask") {
     New-Item -ItemType Directory -Force -Path $delegatedWorkspace | Out-Null
 }
 else {
-    $snapshot = New-SafeSnapshot $realWorkspace $delegatedWorkspace
+    $snapshot = New-SafeSnapshot $realWorkspace $delegatedWorkspace ([int64]$MaxSnapshotMB * 1MB)
+}
+
+$receiptExcludedFiles = @()
+$receiptExcludedFilesTruncated = $false
+if ($snapshot) {
+    $receiptExcludedFiles = @($snapshot.excluded | Select-Object -First 200)
+    $receiptExcludedFilesTruncated = ($snapshot.excluded.Count -gt $receiptExcludedFiles.Count)
+}
+
+if ($resolvedMode -ne "ask" -and $snapshot.too_large) {
+    $largestText = if ($snapshot.largest_snapshot_roots.Count -gt 0) {
+        (($snapshot.largest_snapshot_roots | ForEach-Object { $_.path + "=" + $_.mb + "MB" }) -join ", ")
+    }
+    else { "n/a" }
+
+    $tooLargeMessage = @"
+AgySafe stopped before calling AGY because the filtered workspace is too large.
+Snapshot candidate: $($snapshot.snapshot_mb) MB across $($snapshot.candidate_file_count) files.
+Limit: $($snapshot.snapshot_limit_mb) MB.
+Largest roots: $largestText
+Create or update .agysafeignore to exclude data/output directories, or review a smaller --workspace. Use --max-snapshot-mb only when the larger workspace is intentional.
+"@.Trim()
+
+    $tooLargeResult = [ordered]@{
+        schema = "agysafe.receipt.v1"
+        status = "SNAPSHOT_TOO_LARGE"
+        mode = $resolvedMode
+        requested_model = $Model
+        selected_model = $selectedModel
+        real_workspace = $realWorkspace
+        workspace_source = "local"
+        workspace_note = $workspaceNote
+        delegated_workspace = $delegatedWorkspace
+        snapshot_used = $false
+        snapshot_preflight = $true
+        real_workspace_exposed_to_agy = $false
+        included_file_count = 0
+        snapshot_candidate_file_count = $snapshot.candidate_file_count
+        excluded_file_count = $snapshot.excluded.Count
+        excluded_files = $receiptExcludedFiles
+        excluded_files_truncated = $receiptExcludedFilesTruncated
+        snapshot_bytes = $snapshot.snapshot_bytes
+        snapshot_mb = $snapshot.snapshot_mb
+        snapshot_limit_mb = $snapshot.snapshot_limit_mb
+        largest_snapshot_roots = $snapshot.largest_snapshot_roots
+        agysafeignore_used = $snapshot.ignore_file_used
+        changed_files = @()
+        removed_environment_names = @()
+        agy_exit_code = $null
+        quota_type = $null
+        reset_hint = $null
+        recommended_fallback = $null
+        handoff_path = $null
+        result = $tooLargeMessage
+        run_dir = $runDir
+        sandbox = $true
+        dangerous_permission_bypass = $false
+    }
+
+    Write-JsonUtf8 (Join-Path $runDir "receipt.json") $tooLargeResult
+
+    if ($Json) { $tooLargeResult | ConvertTo-Json -Depth 12 }
+    else {
+        Write-Output $tooLargeMessage
+        Write-Host ""
+        Write-Host "AgySafe · SNAPSHOT_TOO_LARGE"
+        Write-Host ("Workspace: " + $realWorkspace)
+    }
+
+    return
 }
 
 if ($resolvedMode -ne "ask" -and $snapshot.included.Count -eq 0) {
@@ -587,9 +815,19 @@ if ($resolvedMode -ne "ask" -and $snapshot.included.Count -eq 0) {
         workspace_source = "local"
         workspace_note = $workspaceNote
         delegated_workspace = $delegatedWorkspace
+        snapshot_used = $false
+        snapshot_preflight = $true
+        real_workspace_exposed_to_agy = $false
         included_file_count = 0
+        snapshot_candidate_file_count = $snapshot.candidate_file_count
         excluded_file_count = $snapshot.excluded.Count
-        excluded_files = $snapshot.excluded
+        snapshot_bytes = $snapshot.snapshot_bytes
+        snapshot_mb = $snapshot.snapshot_mb
+        snapshot_limit_mb = $snapshot.snapshot_limit_mb
+        largest_snapshot_roots = $snapshot.largest_snapshot_roots
+        agysafeignore_used = $snapshot.ignore_file_used
+        excluded_files = $receiptExcludedFiles
+        excluded_files_truncated = $receiptExcludedFilesTruncated
         quota_type = $null
         reset_hint = $null
         recommended_fallback = $null
@@ -642,10 +880,18 @@ $receipt = [ordered]@{
     workspace_note = $workspaceNote
     delegated_workspace = $delegatedWorkspace
     snapshot_used = ($resolvedMode -ne "ask")
+    snapshot_preflight = ($resolvedMode -ne "ask")
     real_workspace_exposed_to_agy = $false
     included_file_count = $(if ($snapshot) { $snapshot.included.Count } else { 0 })
+    snapshot_candidate_file_count = $(if ($snapshot) { $snapshot.candidate_file_count } else { 0 })
     excluded_file_count = $(if ($snapshot) { $snapshot.excluded.Count } else { 0 })
-    excluded_files = $(if ($snapshot) { $snapshot.excluded } else { @() })
+    snapshot_bytes = $(if ($snapshot) { $snapshot.snapshot_bytes } else { 0 })
+    snapshot_mb = $(if ($snapshot) { $snapshot.snapshot_mb } else { 0 })
+    snapshot_limit_mb = $MaxSnapshotMB
+    largest_snapshot_roots = $(if ($snapshot) { $snapshot.largest_snapshot_roots } else { @() })
+    agysafeignore_used = $(if ($snapshot) { $snapshot.ignore_file_used } else { $false })
+    excluded_files = $receiptExcludedFiles
+    excluded_files_truncated = $receiptExcludedFilesTruncated
     changed_files = $changedFiles
     removed_environment_names = $agyResult.removed_environment_names
     agy_exit_code = $agyResult.exit_code

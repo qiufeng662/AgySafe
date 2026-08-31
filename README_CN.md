@@ -6,7 +6,7 @@
 
 **官方 AGY CLI · 不绑定单一 Agent · 本地优先 · 默认安全**
 
-[![Release](https://img.shields.io/badge/release-v1.0.1-2ea44f?style=flat-square)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v1.0.2-2ea44f?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-PowerShell%205.1%2B-0078D4?style=flat-square&logo=windows)](#运行要求)
 [![AGY](https://img.shields.io/badge/runtime-official%20agy-4285F4?style=flat-square)](#它是怎么工作的)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -73,6 +73,7 @@ AgySafe 不想成为另一个庞大的 AI 框架。
 | 🧠 | **Gemini-first 自动选模型** | 默认 `Model=auto` 高强度优先使用 Gemini；Claude/GPT 只有显式 `--model` / `-m` 才会调用 |
 | 🎛️ | **手动指定模型** | 随时用 `--model` / `-m` 覆盖自动选择 |
 | 📦 | **隔离快照** | 审查和修改默认发生在真实项目的隔离副本 |
+| 📉 | **大工作区保护** | 支持 `.agysafeignore`、常见数据/二进制默认排除、快照体积统计与 128MB 预检上限 |
 | 🔐 | **Secret Filter** | 自动排除 `.env`、私钥、凭据、常见数据库等 |
 | 🧹 | **项目降噪** | 自动跳过 `.git`、依赖、缓存、虚拟环境、大文件 |
 | 🪟 | **Windows 友好** | 处理 PowerShell 5.1 编码、`NUL/CON/COM1` 等特殊情况 |
@@ -132,6 +133,24 @@ agysafe -m gemini-3.1-pro-high "分析整个项目架构"
 ```text
 agysafe --workspace "." --json "审查一下当前项目"
 ```
+
+如果项目里同时包含大量研究数据、结果文件或生成物，可以在项目根目录创建 `.agysafeignore`：
+
+```text
+# .agysafeignore
+outputs/
+临界实验/
+外部校准/
+*.zip
+```
+
+AgySafe v1.0.2 还会默认排除常见 DTA/XLSX/Parquet/模型二进制格式；过滤后的候选快照超过 128MB 时，会在调用 AGY **之前**返回 `SNAPSHOT_TOO_LARGE`。确有需要时可显式提高：
+
+```text
+agysafe --max-snapshot-mb 256 --workspace "." --json "审查当前项目"
+```
+
+优先缩小 workspace，而不是单纯增加超时或快照上限。小型 CSV 默认仍允许进入快照。
 
 ## 3. 在 Agent 里直接用
 
@@ -243,7 +262,7 @@ agysafe -m gemini-3.1-pro-high "分析整个架构"
 agysafe -m claude-sonnet-4-6 "深度审查这个模块"
 ```
 
-> AgySafe 审查的是 `--workspace` 指向的**本地工作区**。提示词里的 GitHub URL 目前只是上下文，v1.0.1 不会自动 clone 或切换仓库。
+> AgySafe 审查的是 `--workspace` 指向的**本地工作区**。提示词里的 GitHub URL 目前只是上下文，v1.0.2 不会自动 clone 或切换仓库。
 
 ---
 
@@ -341,6 +360,7 @@ agysafe --workspace "." --json --timeout 2 "只回复 OK"
 | `INCOMPLETE` | AGY 即使 exit code=0，也没有真正输出最终审查/结果 |
 | `NO_CHANGES` | edit 模式未产生修改 |
 | `SNAPSHOT_EMPTY` | 过滤后没有可委托的项目文件 |
+| `SNAPSHOT_TOO_LARGE` | 过滤后的候选 workspace 超过快照上限；AGY 尚未被调用 |
 
 ---
 
@@ -384,7 +404,7 @@ v1.0.0 已经实际验证：
 - **OpenCode**：完整项目 review、自动模型、隔离快照、过滤、真实 AGY 结果；
 - **Codex**：Universal CLI、自动模型、真实 AGY smoke test。
 
-v1.0.1 扩展了 Windows hermetic self-test，覆盖 review/edit 隔离、Secret Filter、手动模型覆盖、`--doctor`、quota 分类与 incomplete 检测。推送或 PR 后，GitHub Actions 会在 `windows-latest` 上执行这套测试。
+v1.0.2 在 v1.0.1 可靠性测试基础上继续加入大工作区测试：默认数据格式排除、CSV 保留、`.agysafeignore`、快照体积指标、`SNAPSHOT_TOO_LARGE` 与 CLI 上限覆盖。推送或 PR 后，GitHub Actions 会在 `windows-latest` 上执行这套测试。
 
 这是一个年轻项目，但核心链路已经能够实际工作。
 

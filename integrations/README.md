@@ -35,7 +35,9 @@ agysafe --workspace "." --json "<task>"
 
 This is important: a host update should normally require changing only a thin adapter, not the AgySafe execution core.
 
-Hosts must treat `real_workspace` in the JSON receipt as the source of truth. A GitHub URL written in task text does not select or clone a repository in v1.0.1.
+Hosts must treat `real_workspace` in the JSON receipt as the source of truth. A GitHub URL written in task text does not select or clone a repository in v1.0.2.
+
+Hosts should also treat `SNAPSHOT_TOO_LARGE` as a workspace-slimming signal, not a generic AGY timeout: surface the snapshot size and heaviest roots and recommend `.agysafeignore` or a narrower workspace.
 
 ## Files
 

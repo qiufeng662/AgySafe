@@ -9,5 +9,8 @@
   "readme_has_badges": true,
   "readme_has_agent_setup": true,
   "readme_has_troubleshooting": true,
-  "readme_has_architecture": true
+  "readme_has_architecture": true,
+  "agysafeignore_example_present": true,
+  "large_workspace_docs_present": true,
+  "snapshot_guard_tests_present": true
 }

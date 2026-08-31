@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.2 - 2026-08-31
+
+Large-workspace safety update for code repositories that also contain research data, generated outputs, or other non-code artifacts.
+
+### Snapshot slimming
+
+- Added project-level `.agysafeignore` support with a deliberately small glob subset; blank lines and `#` comments are supported, while negation (`!`) is intentionally ignored in v1.0.2.
+- Added default exclusions for common data/model/binary formats such as DTA, XLS/XLSX, Parquet, Feather/Arrow, SAV/SAS, R data, Pickle/Joblib, NumPy, HDF5, PyTorch and ONNX files.
+- Small CSV files remain eligible by default so code fixtures and lightweight tabular configuration are not silently removed.
+- Snapshot planning now reports candidate file count, total bytes/MB, whether `.agysafeignore` was used, and the largest top-level roots.
+
+### Large-workspace guard
+
+- Added a default 128 MB filtered-snapshot limit before official AGY is launched.
+- Added `SNAPSHOT_TOO_LARGE`; oversized workspaces stop early instead of consuming a long AGY run that is likely to time out.
+- Added `--max-snapshot-mb <MB>` for intentional overrides (1..2048 MB).
+- Oversized-workspace guidance prioritizes `.agysafeignore` or a smaller `--workspace` over simply increasing timeout.
+
+### Tests and docs
+
+- Added hermetic tests for default data exclusions, CSV retention, `.agysafeignore`, size metrics, the large-workspace guard, and CLI snapshot-limit override.
+- Updated OpenCode guidance to surface `SNAPSHOT_TOO_LARGE` and the heaviest snapshot roots instead of misdiagnosing the issue as a generic timeout.
+- Updated README, architecture, quick start and troubleshooting documentation.
+
 ## 1.0.1 - 2026-08-30
 
 Reliability update based on real long-running AGY review diagnostics.

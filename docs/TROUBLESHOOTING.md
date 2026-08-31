@@ -171,11 +171,45 @@ Inspect `excluded_files`.
 
 The repository may consist mostly of generated, sensitive, database, dependency, or oversized files.
 
+## `SNAPSHOT_TOO_LARGE`
+
+The **filtered** workspace still exceeded the snapshot safety limit, so AgySafe stopped before official AGY was launched. This is intentionally different from a 10-minute AGY timeout.
+
+Inspect:
+
+```text
+snapshot_candidate_file_count
+snapshot_mb
+snapshot_limit_mb
+largest_snapshot_roots
+agysafeignore_used
+```
+
+Preferred fix: create or update a root-level `.agysafeignore`, for example:
+
+```text
+outputs/
+临界实验/
+外部校准/
+DEPLOY_PACKAGE_*/
+*.zip
+```
+
+AgySafe v1.0.2 already excludes common DTA/XLSX/Parquet/model-binary formats. Small CSV files remain eligible by default, so data-heavy CSV directories should normally be ignored by directory.
+
+If the larger filtered workspace is genuinely intentional, use:
+
+```powershell
+agysafe --max-snapshot-mb 256 --workspace "." --json "review the current project"
+```
+
+Do **not** reach for a 60-minute timeout first. Slim the workspace before increasing either timeout or snapshot size.
+
 ---
 
 # GitHub URL in the task reviewed the wrong project
 
-AgySafe v1.0.1 does not automatically clone a repository from a URL embedded in the task. The actual target is the local `--workspace` supplied by the host.
+AgySafe v1.0.2 does not automatically clone a repository from a URL embedded in the task. The actual target is the local `--workspace` supplied by the host.
 
 Check the receipt:
 
@@ -188,6 +222,12 @@ workspace_note
 OpenCode `/agy` should surface `real_workspace` rather than claiming that a prompt URL was the reviewed repository.
 
 ---
+
+# Large research/data project times out
+
+If a repository mixes code with many `.dta`, `.xlsx`, `.csv`, generated outputs, experiment folders, or deployment bundles, first inspect the AgySafe receipt instead of assuming AGY itself is slow.
+
+In v1.0.2, `SNAPSHOT_TOO_LARGE` should normally catch this before AGY runs. If an older release simply times out, upgrade and add `.agysafeignore`. For code review, prefer excluding data/output directories over raising `--timeout`.
 
 # Host-agent-specific failures
 

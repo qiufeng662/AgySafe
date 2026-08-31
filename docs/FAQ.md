@@ -36,13 +36,13 @@ or:
 
 ## Will `/agy review https://github.com/...` clone that repository?
 
-No, not in v1.0.1.
+No, not in v1.0.2.
 
 The GitHub URL is prompt context only. AgySafe reviews the local workspace supplied with `--workspace`. Open the desired local project first, or pass its directory explicitly.
 
 ## Does `Model=auto` ever choose Claude or GPT?
 
-No in v1.0.1. Automatic routing is Gemini-first so high-frequency use does not silently consume scarcer model quota. Claude/GPT remain available with `--model` / `-m`.
+No in v1.0.2. Automatic routing is Gemini-first so high-frequency use does not silently consume scarcer model quota. Claude/GPT remain available with `--model` / `-m`.
 
 ## Can Codex use it?
 
@@ -97,3 +97,8 @@ Use the prompt in [TROUBLESHOOTING.md](TROUBLESHOOTING.md). The structured recei
 No.
 
 It uses the official AGY CLI, but service rules, eligibility, quota, region behavior, and abuse prevention remain controlled by Google/Antigravity.
+
+
+## What if my repository contains hundreds of MB of research data?
+
+AgySafe v1.0.2 preflights the **filtered** snapshot and stops with `SNAPSHOT_TOO_LARGE` above 128 MB before AGY is launched. Add a project-root `.agysafeignore` for data/output directories, or point `--workspace` at the code subdirectory. Common DTA/XLSX/Parquet/model-binary formats are excluded by default; small CSV files remain eligible. Use `--max-snapshot-mb` only when a larger snapshot is intentional.

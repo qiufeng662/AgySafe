@@ -85,7 +85,8 @@ function Add-MarkedBlock {
 }
 
 Write-Host ""
-Write-Host "AgySafe v1.0.1"
+$releaseVersion = ([System.IO.File]::ReadAllText((Join-Path $repo "VERSION"))).Trim()
+Write-Host ("AgySafe v" + $releaseVersion)
 Write-Host "---------------"
 
 Write-Host "[1/5] Running local self-test..."

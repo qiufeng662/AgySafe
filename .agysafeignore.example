@@ -1,0 +1,10 @@
+# AgySafe project-specific snapshot exclusions.
+# Copy this file to .agysafeignore in a data-heavy project and edit as needed.
+# v1.0.2 supports simple glob matching and directory prefixes.
+# Negation patterns beginning with ! are intentionally unsupported.
+
+outputs/
+results/
+data/raw/
+*.zip
+*.7z

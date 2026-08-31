@@ -17,5 +17,5 @@ Manual model override:
 agysafe --workspace "." --model <slug> --json "<exact user task>"
 ```
 
-Return the real AgySafe result. Do not repeatedly retry a failed long task.
+Return the real AgySafe result. Do not repeatedly retry a failed long task. If the receipt says `SNAPSHOT_TOO_LARGE`, report the snapshot size/heaviest roots and recommend `.agysafeignore` or a smaller workspace before increasing timeout.
 <!-- AGYSAFE:END -->

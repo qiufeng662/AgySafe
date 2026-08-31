@@ -87,6 +87,7 @@ Supported options include:
 --mode
 --workspace / -w
 --timeout
+--max-snapshot-mb
 --json
 --doctor
 ```
@@ -130,7 +131,7 @@ Current default routing is intentionally simple and **Gemini-first**:
 | normal review | `gemini-3.7-flash-high` |
 | architecture/cross-file/deep architecture | `gemini-3.1-pro-high` |
 
-Claude, GPT, and other AGY-supported models are **explicit-only** in v1.0.1. Mentioning a model name inside the task does not spend that model's quota automatically; use `--model` / `-m` when you actually want it.
+Claude, GPT, and other AGY-supported models are **explicit-only** in v1.0.2. Mentioning a model name inside the task does not spend that model's quota automatically; use `--model` / `-m` when you actually want it.
 
 Manual `--model` always overrides automatic routing.
 
@@ -163,7 +164,12 @@ Common exclusions:
 - credential/secrets files
 - local databases
 - very large files
+- common research-data/model-binary formats (`.dta`, `.xlsx`, `.parquet`, `.pkl`, `.npy`, `.pt`, `.onnx`, etc.)
 - Windows reserved device names
+
+Projects can add a root-level `.agysafeignore` to exclude data/output directories or other project-specific noise. v1.0.2 intentionally supports a small glob subset: blank lines and `#` comments are accepted; `!` negation is ignored. Small CSV files remain eligible by default.
+
+Before copying, AgySafe computes the filtered candidate size and largest top-level roots. The default snapshot limit is 128 MB. If the candidate exceeds that limit, AgySafe returns `SNAPSHOT_TOO_LARGE` **without launching AGY**. Users should prefer `.agysafeignore` or a narrower `--workspace`; `--max-snapshot-mb` is an explicit escape hatch for intentional large reviews.
 
 A single file-copy failure is recorded and skipped instead of aborting the entire snapshot.
 
@@ -225,6 +231,7 @@ NO_OUTPUT
 INCOMPLETE
 NO_CHANGES
 SNAPSHOT_EMPTY
+SNAPSHOT_TOO_LARGE
 ERROR
 ```
 

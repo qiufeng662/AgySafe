@@ -16,6 +16,11 @@ Set-Content -LiteralPath (Join-Path $project ".env") -Value 'API_KEY=DO_NOT_COPY
 New-Item -ItemType Directory -Force -Path (Join-Path $project "node_modules") | Out-Null
 Set-Content -LiteralPath (Join-Path $project "node_modules\ignore.js") -Value 'ignored' -Encoding UTF8
 
+# Data/binary fixtures for v1.0.2 snapshot slimming.
+Set-Content -LiteralPath (Join-Path $project "sample.dta") -Value 'binary-placeholder' -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $project "sample.xlsx") -Value 'binary-placeholder' -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $project "fixture.csv") -Value 'a,b`n1,2' -Encoding UTF8
+
 $oldRoot = $env:USERPROFILE
 $oldMode = $env:AGYSAFE_TEST_MODE
 $oldAgyBin = $env:AGYSAFE_AGY_BIN
@@ -43,6 +48,11 @@ try {
     if ($review.real_workspace_exposed_to_agy) { throw "real project exposed" }
     if (Test-Path -LiteralPath (Join-Path $review.delegated_workspace ".env")) { throw ".env leaked" }
     if (Test-Path -LiteralPath (Join-Path $review.delegated_workspace "node_modules")) { throw "node_modules leaked" }
+    if (Test-Path -LiteralPath (Join-Path $review.delegated_workspace "sample.dta")) { throw ".dta should be excluded by default" }
+    if (Test-Path -LiteralPath (Join-Path $review.delegated_workspace "sample.xlsx")) { throw ".xlsx should be excluded by default" }
+    if (-not (Test-Path -LiteralPath (Join-Path $review.delegated_workspace "fixture.csv"))) { throw "small CSV should remain eligible by default" }
+    if ($review.snapshot_limit_mb -ne 128) { throw "default snapshot limit changed unexpectedly" }
+    if ($review.snapshot_bytes -le 0) { throw "snapshot size metrics missing" }
 
     # Core isolated edit path.
     $env:AGYSAFE_TEST_MODE = "edit"
@@ -70,6 +80,7 @@ try {
         --workspace $project `
         --model claude-sonnet-4-6 `
         --mode review `
+        --max-snapshot-mb 64 `
         --json `
         "审查一下当前项目"
 
@@ -78,6 +89,7 @@ try {
     if ($cliResult.status -ne "SUCCESS") { throw "universal CLI status: $($cliResult.status)" }
     if ($cliResult.selected_model -ne "claude-sonnet-4-6") { throw "universal CLI model override failed" }
     if ($cliResult.mode -ne "review") { throw "universal CLI mode override failed" }
+    if ($cliResult.snapshot_limit_mb -ne 64) { throw "universal CLI max snapshot override failed" }
 
     # Auto routing must remain Gemini-first even when the task text mentions Claude.
     $autoPremiumJson = & $runner `
@@ -88,6 +100,42 @@ try {
         -Json
     $autoPremium = $autoPremiumJson | ConvertFrom-Json
     if ($autoPremium.selected_model -ne "gemini-3.7-flash-high") { throw "auto routing selected a premium model implicitly" }
+
+    # Large-workspace guard must stop before AGY is called.
+    $largeProject = Join-Path $temp "large-project"
+    $largeData = Join-Path $largeProject "outputs"
+    New-Item -ItemType Directory -Force -Path $largeData | Out-Null
+    Set-Content -LiteralPath (Join-Path $largeProject "main.py") -Value 'print("large")' -Encoding UTF8
+    $largeFile = Join-Path $largeData "payload.txt"
+    $stream = [System.IO.File]::Open($largeFile, [System.IO.FileMode]::Create)
+    try { $stream.SetLength(2MB) } finally { $stream.Dispose() }
+
+    $largeJson = & $runner `
+        -Task "审查当前项目" `
+        -Workspace $largeProject `
+        -Mode review `
+        -Model auto `
+        -MaxSnapshotMB 1 `
+        -Json
+    $large = $largeJson | ConvertFrom-Json
+    if ($large.status -ne "SNAPSHOT_TOO_LARGE") { throw "large snapshot guard failed: $($large.status)" }
+    if ($null -ne $large.agy_exit_code) { throw "AGY should not run for oversized snapshot" }
+    if ($large.snapshot_mb -le $large.snapshot_limit_mb) { throw "oversized snapshot metrics invalid" }
+    if (@($large.largest_snapshot_roots).Count -lt 1) { throw "largest snapshot roots missing" }
+
+    # .agysafeignore should slim the same project enough to proceed.
+    Set-Content -LiteralPath (Join-Path $largeProject ".agysafeignore") -Value "outputs/" -Encoding UTF8
+    $ignoredJson = & $runner `
+        -Task "审查当前项目" `
+        -Workspace $largeProject `
+        -Mode review `
+        -Model auto `
+        -MaxSnapshotMB 1 `
+        -Json
+    $ignored = $ignoredJson | ConvertFrom-Json
+    if ($ignored.status -ne "SUCCESS") { throw ".agysafeignore review failed: $($ignored.status)" }
+    if (-not $ignored.agysafeignore_used) { throw ".agysafeignore usage not reported" }
+    if (Test-Path -LiteralPath (Join-Path $ignored.delegated_workspace "outputs")) { throw ".agysafeignore directory leaked" }
 
     # Doctor path, including the PowerShell 5.1 $Doctor/$doctor collision regression.
     $doctorJson = & $cli --doctor --json

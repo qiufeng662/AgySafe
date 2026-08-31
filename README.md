@@ -6,7 +6,7 @@
 
 **Official AGY CLI · Agent-agnostic · Local-first · Safe by default**
 
-[![Release](https://img.shields.io/badge/release-v1.0.1-2ea44f?style=flat-square)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v1.0.2-2ea44f?style=flat-square)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/Windows-PowerShell%205.1%2B-0078D4?style=flat-square&logo=windows)](#requirements)
 [![AGY](https://img.shields.io/badge/runtime-official%20agy-4285F4?style=flat-square)](#how-it-works)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -64,6 +64,7 @@ flowchart LR
 | 📦 | **Isolated snapshots** | Review/edit tasks work on a copied workspace rather than your real project |
 | 🔐 | **Secret filtering** | Excludes `.env`, private keys, credentials, common DBs and high-confidence token patterns |
 | 🧹 | **Noise filtering** | Skips `.git`, dependencies, caches, virtual environments and oversized files |
+| 📉 | **Large-workspace safety** | `.agysafeignore`, common data/binary exclusions, size metrics and a 128 MB preflight guard keep data-heavy repos reviewable |
 | 🪟 | **Windows-aware** | Handles PowerShell 5.1 encoding and reserved names such as `NUL`, `CON`, `COM1` |
 | 🧾 | **Structured receipts** | Every run can return machine-readable JSON with model, mode, workspace and status |
 | 🧯 | **Fail clearly** | Network, region, workspace, permission and output failures are surfaced instead of disguised |
@@ -115,6 +116,24 @@ Structured output for another agent:
 ```text
 agysafe --workspace "." --json "review the current project"
 ```
+
+For data-heavy projects, add a project-level `.agysafeignore`:
+
+```text
+# .agysafeignore
+outputs/
+临界实验/
+外部校准/
+*.zip
+```
+
+AgySafe also excludes common DTA/XLSX/Parquet/model-binary formats by default and stops before AGY if the filtered snapshot would exceed 128 MB. Intentional override:
+
+```text
+agysafe --max-snapshot-mb 256 --workspace "." --json "review the current project"
+```
+
+Prefer slimming the workspace over raising the limit. Small CSV files remain eligible by default.
 
 ### 3. Or use the native Agent entry point
 
@@ -222,7 +241,7 @@ agysafe -m gemini-3.1-pro-high "analyze the architecture"
 agysafe -m claude-sonnet-4-6 "deep-review this module"
 ```
 
-> AgySafe reviews the **local workspace passed with `--workspace`**. A GitHub URL inside the task text is context only; v1.0.1 does not automatically clone or switch repositories.
+> AgySafe reviews the **local workspace passed with `--workspace`**. A GitHub URL inside the task text is context only; v1.0.2 does not automatically clone or switch repositories.
 
 Detailed routing behavior: **[Architecture →](docs/ARCHITECTURE.md)**
 
@@ -250,6 +269,9 @@ Default protections include:
 - high-confidence token/key filtering;
 - secret-like environment-variable cleanup;
 - dependency/cache/build-directory filtering;
+- project-level `.agysafeignore` for data/output directories;
+- default exclusion of common research-data/model-binary formats;
+- 128 MB filtered-snapshot preflight guard with root-size diagnostics;
 - sandbox mode;
 - no dangerous permission-bypass flag;
 - no automatic write-back from isolated edits to the real project.
@@ -316,6 +338,7 @@ Typical statuses include:
 | `INCOMPLETE` | AGY exited without a real final review/result even if its process exit code was 0 |
 | `NO_CHANGES` | Edit mode completed without changed files |
 | `SNAPSHOT_EMPTY` | Nothing safe/useful remained after snapshot filtering |
+| `SNAPSHOT_TOO_LARGE` | Filtered workspace exceeded the snapshot size guard; no AGY call was made |
 
 ### Let your agent diagnose it
 
@@ -354,7 +377,7 @@ The v1.0.0 release path was exercised with:
 - **OpenCode**: full project review through automatic model routing, isolated snapshot, filtering and real AGY output.
 - **Codex**: universal CLI invocation, automatic model selection and real AGY smoke test.
 
-v1.0.1 expands the hermetic Windows self-test suite to cover review/edit isolation, secret filtering, manual model override, `--doctor`, quota classification and incomplete-output detection. The GitHub Actions workflow runs the suite on `windows-latest` after push/PR.
+v1.0.2 extends the hermetic Windows self-test suite with large-workspace coverage: default data exclusions, CSV retention, `.agysafeignore`, snapshot-size metrics, `SNAPSHOT_TOO_LARGE`, and CLI limit override, in addition to the v1.0.1 reliability tests. The GitHub Actions workflow runs the suite on `windows-latest` after push/PR.
 
 AgySafe is still a young project. Reports from other agents and environments are welcome.
 

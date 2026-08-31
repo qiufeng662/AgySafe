@@ -20,6 +20,7 @@ Options:
   --mode <mode>            auto | ask | review | edit. Default: auto
   --workspace, -w <path>   Project workspace. Default: current directory
   --timeout <minutes>      1..60. Default: 10
+  --max-snapshot-mb <MB>   1..2048. Default: 128
   --json                   Print structured JSON
   --doctor                 Check official agy CLI
   --help, -h               Show this help
@@ -39,6 +40,7 @@ $model = "auto"
 $mode = "auto"
 $workspace = (Get-Location).Path
 $timeout = 10
+$maxSnapshotMB = 128
 $jsonRequested = $false
 $doctor = $false
 $taskParts = @()
@@ -123,6 +125,19 @@ while ($i -lt $CliArgs.Count) {
             $i += 2
             continue
         }
+
+        if ($arg -match '^--max-snapshot-mb=(\d+)$') {
+            $maxSnapshotMB = [int]$Matches[1]
+            $i++
+            continue
+        }
+
+        if ($arg -eq "--max-snapshot-mb") {
+            if ($i + 1 -ge $CliArgs.Count) { throw "--max-snapshot-mb requires a value" }
+            $maxSnapshotMB = [int]$CliArgs[$i + 1]
+            $i += 2
+            continue
+        }
     }
 
     $taskParts += $arg
@@ -135,6 +150,10 @@ if ($mode -notin @("auto", "ask", "review", "edit")) {
 
 if ($timeout -lt 1 -or $timeout -gt 60) {
     throw "--timeout must be between 1 and 60"
+}
+
+if ($maxSnapshotMB -lt 1 -or $maxSnapshotMB -gt 2048) {
+    throw "--max-snapshot-mb must be between 1 and 2048"
 }
 
 if ($doctor) {
@@ -170,6 +189,7 @@ $raw = @(
         -Mode $mode `
         -Model $model `
         -TimeoutMinutes $timeout `
+        -MaxSnapshotMB $maxSnapshotMB `
         -Json
 )
 
@@ -201,6 +221,10 @@ else {
     }
     if ($result.status -eq "QUOTA_EXCEEDED" -and $result.reset_hint) {
         Write-Host ("Quota reset hint: " + $result.reset_hint)
+    }
+    if ($result.status -eq "SNAPSHOT_TOO_LARGE") {
+        Write-Host ("Snapshot candidate: " + $result.snapshot_mb + " MB / limit " + $result.snapshot_limit_mb + " MB")
+        Write-Host "Use .agysafeignore or a smaller --workspace before increasing the limit."
     }
 
     if ($result.mode -eq "edit" -and @($result.changed_files).Count -gt 0) {

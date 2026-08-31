@@ -61,7 +61,7 @@ Automatic (Gemini-first):
 agysafe "review the current project"
 ```
 
-Automatic routing uses Gemini models only in v1.0.1. Claude/GPT are explicit-only.
+Automatic routing uses Gemini models only in v1.0.2. Claude/GPT are explicit-only.
 
 Manual model:
 
@@ -73,6 +73,21 @@ Agent-friendly JSON:
 
 ```text
 agysafe --workspace "." --json "review the current project"
+```
+
+For repositories that contain lots of data or generated outputs, add `.agysafeignore` at the project root:
+
+```text
+outputs/
+临界实验/
+外部校准/
+*.zip
+```
+
+The default filtered-snapshot limit is 128 MB. If exceeded, AgySafe returns `SNAPSHOT_TOO_LARGE` before AGY runs. Only raise the limit when intentional:
+
+```text
+agysafe --max-snapshot-mb 256 --workspace "." --json "review the current project"
 ```
 
 The task text does not change the local workspace. A GitHub URL inside the prompt is not automatically cloned; `real_workspace` in the receipt is the source of truth.
